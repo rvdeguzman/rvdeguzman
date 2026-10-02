@@ -1,14 +1,16 @@
-// One PS2 minute of the site's orbs (rvdeguzman.github.io PS2Orbs.tsx, in
-// `faithful` mode), as a seamless one-minute SVG loop in braille-style dots.
+// One minute of the PS2 clock orbs, as a seamless one-minute SVG loop in
+// braille-style dots, with the hour hand pinned to 12 o'clock.
 //
-// The motion is a port of `getClockPose` from ps2Clock.ts with the hour pinned
-// to 12, so all seven orbs merge on the 12 o'clock hand at :00. Every rotation
-// term is a whole number of turns per minute, so the loop starts and ends on
-// that same merged orb. SPEED > 1 would play the minute faster than real time.
-//
-// Rendering mimics the site's ASCII renderer: each orb is a bright core, a
-// shell and a faint halo, with a fading trail. That brightness is halftoned
-// into three dot sizes instead of ASCII glyphs.
+// The motion is measured from footage of a real PS2 (see ~/repos/orb-previews,
+// NOTES.md): predicted orb positions match the video to ~5% of the ring radius.
+//  - The orbs ride one ring, seen flat-on (orthographic, no perspective).
+//  - Orb i goes round the ring at 21 + i turns/min, starting from the hour
+//    point, so all seven merge on the hour hand at :00 and bunch into
+//    60 / gcd(s, 60) groups (2 at :30, 3 at :20, ...).
+//  - The ring spins like a coin about the hour-hand axis (12–6 here). The PS2
+//    spins ~17.33 turns/min; 17 keeps the 60 s loop seamless.
+// Orb size, glow and trails follow the site's PS2Orbs.tsx look, halftoned into
+// three dot sizes. SPEED > 1 would play the minute faster than real time.
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -17,54 +19,39 @@ export const WIDTH = 64, HEIGHT = 64, FPS = 30, ORBS = 7;
 export const MINUTE = 60;            // PS2 seconds shown
 export const SPEED = 1;              // playback speed-up (1 = real time)
 export const SECONDS = MINUTE / SPEED; // real loop length
+export const RIDE = 21;              // orb 0's turns/min around the ring
+export const SPIN = 17;              // coin-spin turns/min about the hour axis
 const TAU = Math.PI * 2;
 const SCALE = 5;
 const CX = (WIDTH - 1) / 2, CY = (HEIGHT - 1) / 2;
 const mod = (n: number, d: number) => ((n % d) + d) % d;
 
-// ps2Clock.ts constants.
-const X_SPEED = Math.PI / 3;
-const Z_SPEED = (-Math.PI * 2) / 3;
-const TILT = Math.PI / 2;            // X_ROTATION_ANGLES[minute % 3] for a :00 minute
-const HOUR_ROTATION = Math.PI / 2;   // getHourHandAngle(12): 12 o'clock is +Y
-const WOBBLE_X = 0.3, WOBBLE_Y = 0.45;
-
-// PS2Orbs.tsx scene: orbit radius 2.2, orbSize 1.6, ascii camera distance.
+// PS2Orbs.tsx scene units: orbit radius 2.2, orbSize 1.6.
 const ORBIT = 2.2;
 const ORB_SIZE = 1.6;
-const CAMERA = 14 * Math.pow(0.16, 0.35);
 const CORE = 0.16 * ORB_SIZE, SHELL = 0.23 * ORB_SIZE, HALO = 0.34 * ORB_SIZE;
-// World units → dots, chosen so the nearest orb's halo stays inside the frame.
-const PIXELS = (HEIGHT / 2 - 2) / ((ORBIT + HALO) * CAMERA / (CAMERA - ORBIT));
+const DOTS = 9.3;                    // dots per scene unit: ring radius ≈ 20 dots
 const TRAIL = 0.5;                   // PS2 seconds of trail behind each orb
 
 type Vec = [number, number, number];
 export type Point = { x: number; y: number; z: number };
 
-const rx = (a: number, [x, y, z]: Vec): Vec => [x, y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)];
-const ry = (a: number, [x, y, z]: Vec): Vec => [x * Math.cos(a) + z * Math.sin(a), y, -x * Math.sin(a) + z * Math.cos(a)];
-const rz = (a: number, [x, y, z]: Vec): Vec => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a), z];
-
-/** World position of every orb at PS2 second `s` (getClockPose, faithful). */
+/** World position of every orb at PS2 second `s`: x right, y up, z toward the viewer. */
 export function orbWorld(s: number): Vec[] {
   s = mod(s, MINUTE);
-  const progress = s / MINUTE;
-  const wobble = Math.sin(TAU * progress);
-  const xRotation = X_SPEED * s + TILT * Math.sin(Math.PI * progress);
-  const zRotation = Z_SPEED * s;
+  const spin = TAU * SPIN * s / MINUTE;
   return Array.from({ length: ORBS }, (_, i) => {
-    const angle = (TAU / 60) * s * i;
-    // Orbit plane: Rz(z) · Rx(x) · Rz(hour); then the container's Euler XYZ.
-    const local = rz(zRotation, rx(xRotation, rz(HOUR_ROTATION, [Math.cos(angle), Math.sin(angle), 0])));
-    const scaled: Vec = [local[0] * ORBIT, local[1] * ORBIT, local[2] * ORBIT];
-    return rx(WOBBLE_X * wobble, ry(WOBBLE_Y * wobble, scaled));
+    // Clock angle on the ring: 0 is the hour point (12 o'clock), clockwise.
+    const theta = TAU * (RIDE + i) * s / MINUTE;
+    const across = ORBIT * Math.sin(theta);
+    // Coin spin about the vertical 12–6 axis.
+    return [across * Math.cos(spin), ORBIT * Math.cos(theta), -across * Math.sin(spin)];
   });
 }
 
-/** Perspective-projected orb centres in dots (y down), plus the depth scale. */
+/** Orthographic projection to dots (y down). */
 function project([x, y, z]: Vec): Point {
-  const k = CAMERA / (CAMERA - z);
-  return { x: CX + x * k * PIXELS, y: CY - y * k * PIXELS, z: k };
+  return { x: CX + x * DOTS, y: CY - y * DOTS, z };
 }
 
 export const orbPositions = (seconds: number): Point[] => orbWorld(seconds * SPEED).map(project);
@@ -74,7 +61,7 @@ export function renderFrame(seconds: number): Uint8Array {
   const s = mod(seconds * SPEED, MINUTE);
   const light = new Float32Array(WIDTH * HEIGHT);
   const glow = (p: Point, radius: number, peak: number, falloff: number) => {
-    const r = radius * p.z * PIXELS, reach = Math.ceil(r * falloff);
+    const r = radius * DOTS, reach = Math.ceil(r * falloff);
     for (let y = Math.floor(p.y) - reach; y <= Math.ceil(p.y) + reach; y++)
       for (let x = Math.floor(p.x) - reach; x <= Math.ceil(p.x) + reach; x++) {
         if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) continue;
@@ -90,7 +77,7 @@ export function renderFrame(seconds: number): Uint8Array {
     const u = step / steps;
     for (const p of orbWorld(s - TRAIL * u).map(project)) glow(p, CORE * (1 - u * 0.8), 0.55 * (1 - u) ** 1.5, 1.6);
   }
-  // Halo, shell and core, nearest orbs drawn largest by perspective.
+  // Halo, shell and core.
   for (const p of orbWorld(s).map(project)) {
     glow(p, HALO, 0.3, 1.4);
     glow(p, SHELL, 0.55, 1.3);

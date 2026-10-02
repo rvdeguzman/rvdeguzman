@@ -1,10 +1,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FPS, SECONDS, MINUTE, SPEED, WIDTH, HEIGHT, ORBS, orbWorld, orbPositions, renderFrame, generateSvg, DARK, LIGHT } from "./orbs-svg.ts";
+import { FPS, SECONDS, MINUTE, SPEED, WIDTH, HEIGHT, ORBS, orbWorld, orbPositions, renderFrame, generateSvg, DARK, LIGHT, RIDE, SPIN } from "./orbs-svg.ts";
 
 const difference = (a: Uint8Array, b: Uint8Array) => a.reduce((sum, pixel, i) => sum + Number(pixel !== b[i]), 0);
 const groups = (ps2Second: number) =>
-  new Set(orbWorld(ps2Second).map(p => p.map(v => v.toFixed(6)).join())).size;
+  new Set(orbWorld(ps2Second).map(p => p.map(v => Math.round(v * 1e6) + 0).join())).size; // + 0 folds -0 into 0
 
 test("one PS2 minute plays as a seamless one-minute loop", () => {
   assert.equal(MINUTE, 60);
@@ -33,6 +33,22 @@ test("all seven orbs start and end merged on the 12 o'clock hand", () => {
 test("orbs group like the PS2 clock: 60 / gcd(seconds, 60), else seven", () => {
   const expected: Record<number, number> = { 0: 1, 30: 2, 20: 3, 40: 3, 15: 4, 45: 4, 12: 5, 24: 5, 36: 5, 48: 5, 10: 6, 50: 6 };
   for (let s = 0; s < MINUTE; s++) assert.equal(groups(s), expected[s] ?? 7, `second :${s}`);
+});
+
+test("measured PS2 motion: orbs ride one ring at 21…27 turns/min while it coin-spins about 12–6", () => {
+  assert.equal(RIDE, 21);
+  assert.equal(SPIN, 17);
+  for (const s of [0.4, 3.3, 17.9, 41.2]) {
+    const orbs = orbWorld(s), radius = Math.hypot(...orbs[0]);
+    orbs.forEach(([x, y, z], i) => {
+      const theta = 2 * Math.PI * (RIDE + i) * s / MINUTE;
+      assert.ok(Math.abs(Math.hypot(x, y, z) - radius) < 1e-9, "all on one ring");
+      assert.ok(Math.abs(y - radius * Math.cos(theta)) < 1e-9, "height set by the ride speed alone");
+      // Coin spin: the ring plane always contains the vertical axis.
+      const spin = 2 * Math.PI * SPIN * s / MINUTE;
+      assert.ok(Math.abs(x * Math.sin(spin) + z * Math.cos(spin)) < 1e-9, "on the spinning ring plane");
+    });
+  }
 });
 
 test("orbs stay inside the frame", () => {
