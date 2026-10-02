@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FPS, SECONDS, WIDTH, HEIGHT, renderFrame, generateSvg } from "./koi-svg.ts";
+import { FPS, SECONDS, WIDTH, HEIGHT, headPositions, renderFrame, generateSvg } from "./koi-svg.ts";
 
 const difference = (a: Uint8Array, b: Uint8Array) => a.reduce((sum, pixel, i) => sum + Number(pixel !== b[i]), 0);
 
@@ -9,6 +9,23 @@ test("fish positions, body shapes and ripples repeat exactly every 36 seconds", 
   for (const t of [0, 0.5, 4, 4.5, 13.5, 22.5, 31.5, 35.5]) {
     assert.deepEqual(renderFrame(t), renderFrame(t + SECONDS));
     assert.deepEqual(renderFrame(t), renderFrame(t - SECONDS));
+  }
+});
+
+test("each seeded route meanders instead of just orbiting an ellipse", () => {
+  const samples = Array.from({ length: FPS * SECONDS }, (_, i) => headPositions(i / FPS));
+  for (let f = 0; f < samples[0].length; f++) {
+    const xs = samples.map(s => s[f].x), ys = samples.map(s => s[f].y);
+    assert.ok(xs.every(x => Number.isFinite(x) && x >= 6 && x < WIDTH - 6));
+    assert.ok(ys.every(y => Number.isFinite(y) && y >= 6 && y < HEIGHT - 6));
+    assert.ok(Math.max(...xs) - Math.min(...xs) > 60, "fish travels across the pond");
+    assert.ok(Math.max(...ys) - Math.min(...ys) > 10, "fish changes depth");
+    let reversals = 0;
+    for (let i = 0; i < xs.length; i++) {
+      const prev = xs[(i + xs.length - 1) % xs.length], next = xs[(i + 1) % xs.length];
+      if ((xs[i] - prev) * (next - xs[i]) < 0) reversals++;
+    }
+    assert.ok(reversals >= 4, "route has more horizontal turns than a single elliptical orbit");
   }
 });
 

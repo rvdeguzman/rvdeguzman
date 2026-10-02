@@ -11,28 +11,42 @@ const TRAIL = 9;
 const SCALE = 5;
 const mod = (n: number, d: number) => ((n % d) + d) % d;
 
-// Each fish takes a different closed route, with a gently varying pace.
+// Randomize the routes once, not each frame. Independent sine/cosine phases
+// on each axis create wandering paths instead of concentric/elliptical laps.
+// Integer frequencies keep both the path and its velocity periodic.
+let seed = 0x6b6f69;
+const random = () => ((seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0) / 2 ** 32);
+const waves = (weights: number[]) => {
+  const terms = weights.map((weight, i) => ({
+    frequency: i + 1, amplitude: weight * (0.8 + random() * 0.4), phase: random() * TAU,
+  }));
+  const total = terms.reduce((sum, term) => sum + term.amplitude, 0);
+  return terms.map(term => ({ ...term, amplitude: term.amplitude / total }));
+};
 const fish = [
   { cx: 67, cy: 20, rx: 52, ry: 10, phase: 0.06, direction: 1, laps: 1, beats: 54, kind: 0 },
   { cx: 96, cy: 19, rx: 48, ry: 9, phase: 0.44, direction: -1, laps: 1, beats: 57, kind: 1 },
   { cx: 80, cy: 20, rx: 63, ry: 12, phase: 0.72, direction: 1, laps: 1, beats: 51, kind: 1 },
   { cx: 85, cy: 20, rx: 50, ry: 8, phase: 0.29, direction: -1, laps: 2, beats: 66, kind: 2 },
-];
+].map(f => ({ ...f, xWaves: waves([0.48, 0.38, 0.14]), yWaves: waves([0.2, 0.55, 0.25]) }));
 
 type Fish = typeof fish[number];
 type Point = { x: number; y: number };
 
 function position(f: Fish, turn: number): Point {
-  const a = TAU * (f.phase + f.direction * f.laps * turn);
-  const angle = a + 0.16 * Math.sin(a * 2);
+  const angle = TAU * (f.phase + f.direction * f.laps * turn);
   return {
-    x: f.cx + f.rx * Math.cos(angle),
-    y: f.cy + f.ry * Math.sin(angle) + 1.2 * Math.sin(angle * 3),
+    x: f.cx + f.rx * f.xWaves.reduce((sum, w) => sum + w.amplitude * Math.sin(w.frequency * angle + w.phase), 0),
+    y: f.cy + f.ry * f.yWaves.reduce((sum, w) => sum + w.amplitude * Math.cos(w.frequency * angle + w.phase), 0),
   };
 }
 
+export function headPositions(seconds: number): Point[] {
+  return fish.map(f => position(f, mod(seconds, SECONDS) / SECONDS));
+}
+
 // Sample backwards along the route at equal distances, rather than equal
-// times: the narrow end of an ellipse must not bunch the body into a blob.
+// times: slower turns must not bunch the body into a blob.
 function body(f: Fish, turn: number): Point[] {
   const points = [position(f, turn)];
   let prev = points[0], distance = 0, sample = turn;
