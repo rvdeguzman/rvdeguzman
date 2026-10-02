@@ -4,12 +4,13 @@
 HOST ?= $(shell tailscale ip -4 2>/dev/null || echo 127.0.0.1)
 PORT ?= 4321
 
+# The blurred glow orbs from rvdeguzman.com/now, used in the README.
 # Node 22.6+; no dependencies.
 orbs:
-	node --experimental-strip-types --no-warnings scripts/orbs-svg.ts .
+	node --experimental-strip-types --no-warnings scripts/orbs-glow-svg.ts .
 
 test:
-	node --experimental-strip-types --no-warnings --test scripts/orbs-svg.test.ts
+	node --experimental-strip-types --no-warnings --test scripts/orbs-glow-svg.test.ts
 
 check: test
 
