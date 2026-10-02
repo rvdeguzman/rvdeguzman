@@ -1,106 +1,139 @@
-// One minute of the PS2 System Configuration clock, in braille-style dots.
-// Seven orbs swirl around the clock face and merge into a single orb at the
-// 12 o'clock rod on :00, so the 60-second loop starts and ends on the same spot.
+// One PS2 minute of the site's orbs (rvdeguzman.github.io PS2Orbs.tsx, in
+// `faithful` mode), as a seamless SVG loop in braille-style dots.
 //
-// Orb k turns k + 1 times per minute, all starting at 12. At second s they sit
-// at angles 2π(k + 1)s/60, which lands them in exactly 60/gcd(s, 60) groups
-// whenever that is ≤ 7 — the same grouping the PS2 shows (:30 → 2, :20 → 3,
-// :15 → 4, :12 → 5, :10 → 6, :00 → 1).
+// The motion is a port of `getClockPose` from ps2Clock.ts with the hour pinned
+// to 12, so all seven orbs merge on the 12 o'clock hand at :00. Every rotation
+// term is a whole number of turns per minute, so the loop starts and ends on
+// that same merged orb. SPEED plays the minute faster than real time.
+//
+// Rendering mimics the site's ASCII renderer: each orb is a bright core, a
+// shell and a faint halo, with a fading trail. That brightness is halftoned
+// into three dot sizes instead of ASCII glyphs.
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const WIDTH = 64, HEIGHT = 48, FPS = 20, SECONDS = 60, ORBS = 7;
+export const WIDTH = 64, HEIGHT = 64, FPS = 30, ORBS = 7;
+export const MINUTE = 60;            // PS2 seconds shown
+export const SPEED = 2;              // playback speed-up
+export const SECONDS = MINUTE / SPEED; // real loop length
 const TAU = Math.PI * 2;
 const SCALE = 5;
-const CX = WIDTH / 2, CY = HEIGHT / 2;
-const ORBIT = 12;            // orb swirl radius
-const ROD_IN = 16, ROD_OUT = 20; // crystal rods of the clock face
-const TRAIL = 0.45;          // seconds of motion trail behind each orb
+const CX = (WIDTH - 1) / 2, CY = (HEIGHT - 1) / 2;
 const mod = (n: number, d: number) => ((n % d) + d) % d;
 
-type Point = { x: number; y: number; z: number };
+// ps2Clock.ts constants.
+const X_SPEED = Math.PI / 3;
+const Z_SPEED = (-Math.PI * 2) / 3;
+const TILT = Math.PI / 2;            // X_ROTATION_ANGLES[minute % 3] for a :00 minute
+const HOUR_ROTATION = Math.PI / 2;   // getHourHandAngle(12): 12 o'clock is +Y
+const WOBBLE_X = 0.3, WOBBLE_Y = 0.45;
 
-// The whole clock turns about the vertical axis through the 12 o'clock rod,
-// one full turn per minute (face-on at :00 and :30, edge-on at :15 and :45).
-// Points on that axis — 12 and 6 o'clock — never move.
-const faceTurn = (t: number) => TAU * t / SECONDS;
-// The orbs' swirl wobbles about the same axis so it reads as a sphere but
-// never collapses into a line; it is face-on at every quarter minute.
-const orbTurn = (t: number) => 0.85 * Math.sin(TAU * t / 15);
+// PS2Orbs.tsx scene: orbit radius 2.2, orbSize 1.6, ascii camera distance.
+const ORBIT = 2.2;
+const ORB_SIZE = 1.6;
+const CAMERA = 14 * Math.pow(0.16, 0.35);
+const CORE = 0.16 * ORB_SIZE, SHELL = 0.23 * ORB_SIZE, HALO = 0.34 * ORB_SIZE;
+// World units → dots, chosen so the nearest orb's halo stays inside the frame.
+const PIXELS = (HEIGHT / 2 - 2) / ((ORBIT + HALO) * CAMERA / (CAMERA - ORBIT));
+const TRAIL = 0.5;                   // PS2 seconds of trail behind each orb
 
-// Clock angle θ (0 = 12 o'clock, clockwise) on a circle of radius r whose
-// plane is turned by φ about the vertical axis.
-function project(theta: number, r: number, phi: number): Point {
-  const across = r * Math.sin(theta);
-  return { x: CX + across * Math.cos(phi), y: CY - r * Math.cos(theta), z: across * Math.sin(phi) };
+type Vec = [number, number, number];
+export type Point = { x: number; y: number; z: number };
+
+const rx = (a: number, [x, y, z]: Vec): Vec => [x, y * Math.cos(a) - z * Math.sin(a), y * Math.sin(a) + z * Math.cos(a)];
+const ry = (a: number, [x, y, z]: Vec): Vec => [x * Math.cos(a) + z * Math.sin(a), y, -x * Math.sin(a) + z * Math.cos(a)];
+const rz = (a: number, [x, y, z]: Vec): Vec => [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a), z];
+
+/** World position of every orb at PS2 second `s` (getClockPose, faithful). */
+export function orbWorld(s: number): Vec[] {
+  s = mod(s, MINUTE);
+  const progress = s / MINUTE;
+  const wobble = Math.sin(TAU * progress);
+  const xRotation = X_SPEED * s + TILT * Math.sin(Math.PI * progress);
+  const zRotation = Z_SPEED * s;
+  return Array.from({ length: ORBS }, (_, i) => {
+    const angle = (TAU / 60) * s * i;
+    // Orbit plane: Rz(z) · Rx(x) · Rz(hour); then the container's Euler XYZ.
+    const local = rz(zRotation, rx(xRotation, rz(HOUR_ROTATION, [Math.cos(angle), Math.sin(angle), 0])));
+    const scaled: Vec = [local[0] * ORBIT, local[1] * ORBIT, local[2] * ORBIT];
+    return rx(WOBBLE_X * wobble, ry(WOBBLE_Y * wobble, scaled));
+  });
 }
 
-export function orbPositions(seconds: number): Point[] {
-  const t = mod(seconds, SECONDS);
-  return Array.from({ length: ORBS }, (_, k) => project(TAU * (k + 1) * t / SECONDS, ORBIT, orbTurn(t)));
+/** Perspective-projected orb centres in dots (y down), plus the depth scale. */
+function project([x, y, z]: Vec): Point {
+  const k = CAMERA / (CAMERA - z);
+  return { x: CX + x * k * PIXELS, y: CY - y * k * PIXELS, z: k };
 }
 
+export const orbPositions = (seconds: number): Point[] => orbWorld(seconds * SPEED).map(project);
+
+/** Brightness 0–3 per dot (0 = off), like the site's ASCII density ramp. */
 export function renderFrame(seconds: number): Uint8Array {
-  const t = mod(seconds, SECONDS);
-  const fb = new Uint8Array(WIDTH * HEIGHT);
-  const pixel = (x: number, y: number) => {
-    x = Math.round(x); y = Math.round(y);
-    if (x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT) fb[y * WIDTH + x] = 1;
-  };
-  const disc = (p: { x: number; y: number }, r: number) => {
-    for (let y = -r; y <= r; y++)
-      for (let x = -r; x <= r; x++)
-        if (x * x + y * y <= r * r + Math.trunc(r / 2)) pixel(p.x + x, p.y + y);
+  const s = mod(seconds * SPEED, MINUTE);
+  const light = new Float32Array(WIDTH * HEIGHT);
+  const glow = (p: Point, radius: number, peak: number, falloff: number) => {
+    const r = radius * p.z * PIXELS, reach = Math.ceil(r * falloff);
+    for (let y = Math.floor(p.y) - reach; y <= Math.ceil(p.y) + reach; y++)
+      for (let x = Math.floor(p.x) - reach; x <= Math.ceil(p.x) + reach; x++) {
+        if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) continue;
+        const d = Math.hypot(x - p.x, y - p.y) / r;
+        const v = d <= 1 ? peak : peak * Math.max(0, 1 - (d - 1) / (falloff - 1));
+        light[y * WIDTH + x] = Math.max(light[y * WIDTH + x], v);
+      }
   };
 
-  // Twelve crystal rods. The 12 o'clock rod is the lit "hour" rod.
-  const phi = faceTurn(t);
-  for (let h = 0; h < 12; h++) {
-    const theta = TAU * h / 12;
-    for (let r = ROD_IN; r <= ROD_OUT; r += 0.5) {
-      const p = project(theta, r, phi);
-      if (h === 0) disc(p, 1);
-      else pixel(p.x, p.y);
-    }
+  // Trails: fading, thinning copies of each orb along its recent path.
+  const steps = 12;
+  for (let step = steps; step >= 1; step--) {
+    const u = step / steps;
+    for (const p of orbWorld(s - TRAIL * u).map(project)) glow(p, CORE * (1 - u * 0.8), 0.55 * (1 - u) ** 1.5, 1.6);
+  }
+  // Halo, shell and core, nearest orbs drawn largest by perspective.
+  for (const p of orbWorld(s).map(project)) {
+    glow(p, HALO, 0.3, 1.4);
+    glow(p, SHELL, 0.55, 1.3);
+    glow(p, CORE, 1, 1.25);
   }
 
-  // Orbs with tapering trails; nearer orbs (z < 0 faces the viewer) are larger.
-  for (let k = 0; k < ORBS; k++) {
-    const speed = TAU * (k + 1) / SECONDS;
-    for (let step = 9; step >= 0; step--) {
-      const at = t - TRAIL * step / 9;
-      const p = project(speed * at, ORBIT, orbTurn(at));
-      disc(p, step === 0 ? (p.z > ORBIT / 3 ? 1 : 2) : step < 5 ? 1 : 0);
-    }
-  }
-  return fb;
+  return Uint8Array.from(light, v => (v >= 0.8 ? 3 : v >= 0.45 ? 2 : v >= 0.18 ? 1 : 0));
 }
 
-function path(fb: Uint8Array): string {
+function path(fb: Uint8Array, level: number): string {
   let d = "", px = 0, py = 0;
   for (let y = 0; y < HEIGHT; y++)
     for (let x = 0; x < WIDTH; x++)
-      if (fb[y * WIDTH + x]) {
+      if (fb[y * WIDTH + x] === level) {
         d += d ? `m${x - px} ${y - py}h0` : `M${x} ${y}h0`;
         px = x; py = y;
       }
   return d || "M0 0";
 }
 
+const LEVELS = [
+  { level: 1, width: ".3" },
+  { level: 2, width: ".52" },
+  { level: 3, width: ".78" },
+];
+
 export function generateSvg(color: string): string {
   // Exclude the duplicated endpoint: every frame gets exactly 1/FPS seconds,
   // and frame 0 (all orbs merged at 12) follows the last frame seamlessly.
-  const frames = Array.from({ length: FPS * SECONDS }, (_, i) => path(renderFrame(i / FPS)));
-  const label = "one minute of the PS2 clock: seven orbs swirl and merge at 12 o'clock";
+  const frames = Array.from({ length: FPS * SECONDS }, (_, i) => renderFrame(i / FPS));
+  const label = "one minute of the PS2 clock orbs, sped up: seven orbs swirl and merge at 12 o'clock";
+  const layers = LEVELS.map(({ level, width }) => {
+    const values = frames.map(fb => path(fb, level));
+    return `<path class="still" stroke-width="${width}" d="${values[0]}"/>
+<path class="moving" stroke-width="${width}" d="${values[0]}">
+<animate attributeName="d" dur="${SECONDS}s" repeatCount="indefinite" calcMode="discrete" values="${values.join(";")}"/>
+</path>`;
+  });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH * SCALE}" height="${HEIGHT * SCALE}" viewBox="-0.5 -0.5 ${WIDTH} ${HEIGHT}" role="img" aria-label="${label}">
 <title>${label}</title>
 <style>.still{display:none}@media(prefers-reduced-motion:reduce){.moving{display:none}.still{display:inline}}</style>
-<g fill="none" stroke="${color}" stroke-width=".62" stroke-linecap="round">
-<path class="still" d="${frames[0]}"/>
-<path class="moving" d="${frames[0]}">
-<animate attributeName="d" dur="${SECONDS}s" repeatCount="indefinite" calcMode="discrete" values="${frames.join(";")}"/>
-</path>
+<g fill="none" stroke="${color}" stroke-linecap="round">
+${layers.join("\n")}
 </g>
 </svg>
 `;
@@ -110,5 +143,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const out = process.argv[2] ?? ".";
   writeFileSync(resolve(out, "orbs-dark.svg"), generateSvg("#fbcb97"));
   writeFileSync(resolve(out, "orbs-light.svg"), generateSvg("#b5562a"));
-  console.log(`${FPS * SECONDS} frames, seamless ${SECONDS}s loop → orbs-dark.svg, orbs-light.svg`);
+  console.log(`${FPS * SECONDS} frames, one PS2 minute at ${SPEED}× → seamless ${SECONDS}s loop → orbs-dark.svg, orbs-light.svg`);
 }
