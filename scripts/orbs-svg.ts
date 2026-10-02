@@ -9,8 +9,8 @@
 //    60 / gcd(s, 60) groups (2 at :30, 3 at :20, ...).
 //  - The ring spins like a coin about the hour-hand axis (12–6 here). The PS2
 //    spins ~17.33 turns/min; 17 keeps the 60 s loop seamless.
-// Orb size, glow and trails follow the site's PS2Orbs.tsx look, halftoned into
-// three dot sizes. SPEED > 1 would play the minute faster than real time.
+// Orbs are drawn at the footage's size (half the site's PS2Orbs.tsx orbs: core
+// ≈ 6% of the ring radius) with faint trails, halftoned into three dot sizes. SPEED > 1 would play the minute faster than real time.
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -26,12 +26,13 @@ const SCALE = 5;
 const CX = (WIDTH - 1) / 2, CY = (HEIGHT - 1) / 2;
 const mod = (n: number, d: number) => ((n % d) + d) % d;
 
-// PS2Orbs.tsx scene units: orbit radius 2.2, orbSize 1.6.
+// PS2Orbs.tsx scene units: orbit radius 2.2; orbSize 1.6 halved to match the PS2.
 const ORBIT = 2.2;
-const ORB_SIZE = 1.6;
+const ORB_SIZE = 1.6 * 0.5;
 const CORE = 0.16 * ORB_SIZE, SHELL = 0.23 * ORB_SIZE, HALO = 0.34 * ORB_SIZE;
 const DOTS = 9.3;                    // dots per scene unit: ring radius ≈ 20 dots
 const TRAIL = 0.5;                   // PS2 seconds of trail behind each orb
+const TRAIL_PEAK = 0.35;             // trail brightness right behind the orb (faint)
 
 type Vec = [number, number, number];
 export type Point = { x: number; y: number; z: number };
@@ -75,7 +76,7 @@ export function renderFrame(seconds: number): Uint8Array {
   const steps = 12;
   for (let step = steps; step >= 1; step--) {
     const u = step / steps;
-    for (const p of orbWorld(s - TRAIL * u).map(project)) glow(p, CORE * (1 - u * 0.8), 0.55 * (1 - u) ** 1.5, 1.6);
+    for (const p of orbWorld(s - TRAIL * u).map(project)) glow(p, CORE * (1 - u * 0.8), TRAIL_PEAK * (1 - u) ** 1.5, 1.6);
   }
   // Halo, shell and core.
   for (const p of orbWorld(s).map(project)) {
