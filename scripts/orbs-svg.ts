@@ -1,10 +1,10 @@
 // One PS2 minute of the site's orbs (rvdeguzman.github.io PS2Orbs.tsx, in
-// `faithful` mode), as a seamless SVG loop in braille-style dots.
+// `faithful` mode), as a seamless one-minute SVG loop in braille-style dots.
 //
 // The motion is a port of `getClockPose` from ps2Clock.ts with the hour pinned
 // to 12, so all seven orbs merge on the 12 o'clock hand at :00. Every rotation
 // term is a whole number of turns per minute, so the loop starts and ends on
-// that same merged orb. SPEED plays the minute faster than real time.
+// that same merged orb. SPEED > 1 would play the minute faster than real time.
 //
 // Rendering mimics the site's ASCII renderer: each orb is a bright core, a
 // shell and a faint halo, with a fading trail. That brightness is halftoned
@@ -13,9 +13,9 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const WIDTH = 64, HEIGHT = 64, FPS = 30, ORBS = 7;
+export const WIDTH = 64, HEIGHT = 64, FPS = 20, ORBS = 7;
 export const MINUTE = 60;            // PS2 seconds shown
-export const SPEED = 2;              // playback speed-up
+export const SPEED = 1;              // playback speed-up (1 = real time)
 export const SECONDS = MINUTE / SPEED; // real loop length
 const TAU = Math.PI * 2;
 const SCALE = 5;
@@ -121,7 +121,7 @@ export function generateSvg(color: string): string {
   // Exclude the duplicated endpoint: every frame gets exactly 1/FPS seconds,
   // and frame 0 (all orbs merged at 12) follows the last frame seamlessly.
   const frames = Array.from({ length: FPS * SECONDS }, (_, i) => renderFrame(i / FPS));
-  const label = "one minute of the PS2 clock orbs, sped up: seven orbs swirl and merge at 12 o'clock";
+  const label = "one minute of the PS2 clock orbs: seven orbs swirl and merge at 12 o'clock";
   const layers = LEVELS.map(({ level, width }) => {
     const values = frames.map(fb => path(fb, level));
     return `<path class="still" stroke-width="${width}" d="${values[0]}"/>

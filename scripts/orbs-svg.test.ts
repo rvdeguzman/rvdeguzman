@@ -6,10 +6,10 @@ const difference = (a: Uint8Array, b: Uint8Array) => a.reduce((sum, pixel, i) =>
 const groups = (ps2Second: number) =>
   new Set(orbWorld(ps2Second).map(p => p.map(v => v.toFixed(6)).join())).size;
 
-test("one PS2 minute plays as a faster seamless loop", () => {
+test("one PS2 minute plays as a seamless one-minute loop", () => {
   assert.equal(MINUTE, 60);
-  assert.ok(SPEED > 1, "faster than real time");
-  assert.equal(SECONDS, MINUTE / SPEED);
+  assert.equal(SPEED, 1);
+  assert.equal(SECONDS, 60);
   for (const t of [0, 0.5, 6, SECONDS / 2, SECONDS - 1 / FPS]) {
     assert.deepEqual(renderFrame(t), renderFrame(t + SECONDS));
     assert.deepEqual(renderFrame(t), renderFrame(t - SECONDS));
