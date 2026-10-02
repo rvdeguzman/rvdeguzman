@@ -13,7 +13,7 @@ import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
-export const WIDTH = 64, HEIGHT = 64, FPS = 20, ORBS = 7;
+export const WIDTH = 64, HEIGHT = 64, FPS = 30, ORBS = 7;
 export const MINUTE = 60;            // PS2 seconds shown
 export const SPEED = 1;              // playback speed-up (1 = real time)
 export const SECONDS = MINUTE / SPEED; // real loop length
@@ -117,22 +117,31 @@ const LEVELS = [
   { level: 3, width: ".78" },
 ];
 
-export function generateSvg(color: string): string {
+/** Dot colour per brightness level: [faint glow/trail, shell, core]. */
+export type Palette = readonly [string, string, string];
+
+// The PS2's white cores in blue glow. On a white page a white core would
+// vanish, so light mode inverts the ramp: navy core, lighter blue glow.
+export const DARK: Palette = ["#3557d6", "#88a7ff", "#ffffff"];
+export const LIGHT: Palette = ["#9db2f2", "#3a5bd9", "#0b1f6b"];
+
+export function generateSvg(palette: Palette): string {
   // Exclude the duplicated endpoint: every frame gets exactly 1/FPS seconds,
   // and frame 0 (all orbs merged at 12) follows the last frame seamlessly.
   const frames = Array.from({ length: FPS * SECONDS }, (_, i) => renderFrame(i / FPS));
   const label = "one minute of the PS2 clock orbs: seven orbs swirl and merge at 12 o'clock";
   const layers = LEVELS.map(({ level, width }) => {
     const values = frames.map(fb => path(fb, level));
-    return `<path class="still" stroke-width="${width}" d="${values[0]}"/>
-<path class="moving" stroke-width="${width}" d="${values[0]}">
+    const style = `stroke="${palette[level - 1]}" stroke-width="${width}"`;
+    return `<path class="still" ${style} d="${values[0]}"/>
+<path class="moving" ${style} d="${values[0]}">
 <animate attributeName="d" dur="${SECONDS}s" repeatCount="indefinite" calcMode="discrete" values="${values.join(";")}"/>
 </path>`;
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH * SCALE}" height="${HEIGHT * SCALE}" viewBox="-0.5 -0.5 ${WIDTH} ${HEIGHT}" role="img" aria-label="${label}">
 <title>${label}</title>
 <style>.still{display:none}@media(prefers-reduced-motion:reduce){.moving{display:none}.still{display:inline}}</style>
-<g fill="none" stroke="${color}" stroke-linecap="round">
+<g fill="none" stroke-linecap="round">
 ${layers.join("\n")}
 </g>
 </svg>
@@ -141,7 +150,7 @@ ${layers.join("\n")}
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const out = process.argv[2] ?? ".";
-  writeFileSync(resolve(out, "orbs-dark.svg"), generateSvg("#fbcb97"));
-  writeFileSync(resolve(out, "orbs-light.svg"), generateSvg("#b5562a"));
+  writeFileSync(resolve(out, "orbs-dark.svg"), generateSvg(DARK));
+  writeFileSync(resolve(out, "orbs-light.svg"), generateSvg(LIGHT));
   console.log(`${FPS * SECONDS} frames, one PS2 minute at ${SPEED}× → seamless ${SECONDS}s loop → orbs-dark.svg, orbs-light.svg`);
 }

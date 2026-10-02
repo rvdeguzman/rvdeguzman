@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { FPS, SECONDS, MINUTE, SPEED, WIDTH, HEIGHT, ORBS, orbWorld, orbPositions, renderFrame, generateSvg } from "./orbs-svg.ts";
+import { FPS, SECONDS, MINUTE, SPEED, WIDTH, HEIGHT, ORBS, orbWorld, orbPositions, renderFrame, generateSvg, DARK, LIGHT } from "./orbs-svg.ts";
 
 const difference = (a: Uint8Array, b: Uint8Array) => a.reduce((sum, pixel, i) => sum + Number(pixel !== b[i]), 0);
 const groups = (ps2Second: number) =>
@@ -64,7 +64,7 @@ test("orbs move smoothly, and the seam is an ordinary step", () => {
 });
 
 test("SVG plays three brightness layers forever, starting on the merged orb", () => {
-  const svg = generateSvg("#fbcb97");
+  const svg = generateSvg(DARK);
   const animations = svg.match(/<animate [^>]+>/g)!;
   assert.equal(animations.length, 3);
   for (const animation of animations) {
@@ -72,5 +72,12 @@ test("SVG plays three brightness layers forever, starting on the merged orb", ()
     assert.equal(animation.match(/values="([^"]+)"/)![1].split(";").length, FPS * SECONDS);
   }
   assert.match(svg, /prefers-reduced-motion:reduce/);
-  assert.equal(svg, generateSvg("#fbcb97"), "generation is deterministic");
+  assert.equal(svg, generateSvg(DARK), "generation is deterministic");
+});
+
+test("orbs are PS2 white and blue: white cores in dark mode, navy cores in light mode", () => {
+  assert.equal(DARK[2], "#ffffff");
+  for (const [palette, svg] of [[DARK, generateSvg(DARK)], [LIGHT, generateSvg(LIGHT)]] as const)
+    for (const colour of palette) assert.match(svg, new RegExp(`stroke="${colour}"`));
+  assert.notEqual(LIGHT[2], "#ffffff", "light-mode core stays visible on white");
 });
