@@ -1,10 +1,10 @@
-.PHONY: koi test check
+.PHONY: orbs test check
 
-# Node 22.6+; no dependencies or external simulation checkout needed.
-koi:
-	node --experimental-strip-types --no-warnings scripts/koi-svg.ts .
+# Node 22.6+; no dependencies.
+orbs:
+	node --experimental-strip-types --no-warnings scripts/orbs-svg.ts .
 
 test:
-	node --experimental-strip-types --no-warnings --test scripts/koi-svg.test.ts
+	node --experimental-strip-types --no-warnings --test scripts/orbs-svg.test.ts
 
 check: test

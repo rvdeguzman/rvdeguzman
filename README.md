@@ -1,7 +1,7 @@
 <a href="https://rvdeguzman.com">
   <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="koi-dark.svg">
-    <source media="(prefers-color-scheme: light)" srcset="koi-light.svg">
-    <img alt="A seamless 36-second, braille-style koi pond. Visit my website for the interactive version." src="koi-light.svg" width="800">
+    <source media="(prefers-color-scheme: dark)" srcset="orbs-dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="orbs-light.svg">
+    <img alt="A seamless one-minute loop of the PS2 clock: seven orbs swirl and merge at 12 o'clock. Visit my website for more." src="orbs-light.svg" width="320">
   </picture>
 </a>
